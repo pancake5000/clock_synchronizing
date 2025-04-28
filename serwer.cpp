@@ -105,8 +105,8 @@ int read_from_argv(int argc, char *argv[], string &bind_address, int &port, stri
                 cerr << "Error: Invalid port number." << endl;
                 return 1;
             }
-            port = tmp_port;
-            if (port < 0 || port > 65535)
+            peer_port = tmp_port;
+            if (peer_port < 0 || peer_port > 65535)
             {
                 cerr << "Error: Invalid port number." << endl;
                 return 1;
@@ -119,13 +119,13 @@ int read_from_argv(int argc, char *argv[], string &bind_address, int &port, stri
             return 1;
         }
         }
-        if (got_peer != got_peer_port)
+        
+    }
+    if (got_peer != got_peer_port)
         {
             cerr << "Error: Peer address and port must be provided together." << endl;
             return 1;
         }
-    }
-
     // Optional: Print the parsed values for debugging
     cout << "Bind Address: " << bind_address << endl;
     cout << "Port: " << port << endl;
@@ -143,7 +143,6 @@ int main(int argc, char *argv[])
 
     if (read_from_argv(argc, argv, bind_address, port, peer_address, peer_port) != 0)
     {
-        cerr << "Error: Invalid arguments." << endl;
         return 1;
     }
     if (port <= 0 || port > 65535)
