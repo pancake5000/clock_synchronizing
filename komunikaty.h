@@ -1,5 +1,6 @@
 #include <vector>
 
+//element of peer list in HELLO_REPLY message
 typedef struct
 {
     char peer_address_length;
@@ -7,36 +8,55 @@ typedef struct
     unsigned short port;
 } peer;
 
+//contents of HELLO, CONNECT, ACK_CONNECT, DELAY_REQUEST, GET_TIME messages
 typedef struct{
 
-}nodata_t;
+}no_data_t;
 
+// contents of TIME, SYNC_START, DELAY_RESPONSE messages
 typedef struct
 {
     unsigned long long timestamp;
     char sychronized;
 } timestamp_t;
 
+// contents of HELLO_REPLY message
 typedef struct
 {
    unsigned short count;
    std::vector<peer> peers;
 } peers_t;
 
+// contents of LEADER message
 typedef struct leader_t{
     char synchronized;
 } leader_t;
 
 typedef union
 {
-    nodata_t nodata;
+    no_data_t nodata;                     
     timestamp_t timestamp;
     peers_t peers;
     leader_t leader;
 } message_data;
 
+// structure of message sent and received over network 
 typedef struct
 {
     char message;
     message_data data;
 } message_t;
+
+// Message type ids
+typedef enum {
+    HELLO = 1,
+    HELLO_REPLY = 2,
+    CONNECT = 3,
+    ACK_CONNECT = 4,
+    SYNC_START = 11,
+    DELAY_REQUEST = 12,
+    DELAY_RESPONSE = 13,
+    LEADER = 21,
+    GET_TIME = 31,
+    TIME = 32
+} message_type;
