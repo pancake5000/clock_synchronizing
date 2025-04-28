@@ -1,16 +1,11 @@
 #include <vector>
+
 typedef struct
 {
-    char message;
-    message_data data;
-} message_t;
-
-typedef union
-{
-    nodata_t nodata;
-    timestamp_t timestamp;
-    peers_t peers;
-} message_data;
+    char peer_address_length;
+    std::vector<char> peer_address;
+    unsigned short port;
+} peer;
 
 typedef struct{
 
@@ -28,9 +23,15 @@ typedef struct
    std::vector<peer> peers;
 } peers_t;
 
+typedef union
+{
+    nodata_t nodata;
+    timestamp_t timestamp;
+    peers_t peers;
+} message_data;
+
 typedef struct
 {
-    char peer_address_length;
-    std::vector<char> peer_address;
-    unsigned short port;
-} peer;
+    char message;
+    message_data data;
+} message_t;

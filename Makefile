@@ -5,7 +5,7 @@ TARGET1 = serwer
 
 all: $(TARGET1)
 
-$(TARGET1): $(TARGET1).o
+$(TARGET1): $(TARGET1).o komunikaty.h
 $(TARGET1).o: $(TARGET1).cpp
 
 clean:
