@@ -23,11 +23,16 @@ typedef struct
    std::vector<peer> peers;
 } peers_t;
 
+typedef struct leader_t{
+    char synchronized;
+} leader_t;
+
 typedef union
 {
     nodata_t nodata;
     timestamp_t timestamp;
     peers_t peers;
+    leader_t leader;
 } message_data;
 
 typedef struct
