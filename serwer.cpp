@@ -133,32 +133,15 @@ int read_from_argv(int argc, char *argv[], string &bind_address, int &port, stri
     cout << "Peer Port: " << peer_port << endl;
     return 0;
 }
-int main(int argc, char *argv[])
+int initialize_socket(int &server_socket, sockaddr_in &server_addr, string bind_address, int port)
 {
-
-    string bind_address = "0.0.0.0"; // Default: listen on all addresses
-    int port = 0;                    // Default: any available port
-    string peer_address = "";        // Default: no peer address
-    int peer_port = 0;               // Default: no peer port
-
-    if (read_from_argv(argc, argv, bind_address, port, peer_address, peer_port) != 0)
-    {
-        return 1;
-    }
-    if (port <= 0 || port > 65535)
-    {
-        cerr << "Error: Invalid port number. Port must be between 1 and 65535." << endl;
-        return 1;
-    }
-    // Initialize socket for binding (UDP and IPv4)
-    int server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    server_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (server_socket < 0)
     {
         cerr << "Error creating socket: " << strerror(errno) << endl;
         return 1;
     }
 
-    sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
     server_addr.sin_addr.s_addr = inet_addr(bind_address.c_str());
@@ -170,16 +153,31 @@ int main(int argc, char *argv[])
     }
 
     cout << "Server socket initialized and bound to " << bind_address << ":" << port << endl;
+    return 0;
+}   
+int main(int argc, char *argv[])
+{
 
+    string bind_address = "0.0.0.0"; // Default: listen on all addresses
+    int port = 0;                    // Default: any available port
+    string peer_address = "";        // Default: no peer address
+    int peer_port = 0;               // Default: no peer port
+
+    // Parsing command line arguments
+    if (read_from_argv(argc, argv, bind_address, port, peer_address, peer_port) != 0)
+    {
+        return 1;
+    }
+
+    int server_socket = -1;
+    sockaddr_in server_addr{};
+    if(initialize_socket(server_socket, server_addr, bind_address, port) != 0)
+    {
+        return 1;
+    }
+    
     // Say Hello
-    // Wait for hello_reply
-    // connect to all the peers
-    /*
-        while(true){
-            czytaj z socketu
-            responduj
-        }
-    */
+    
     // Initialize socket for peer connection if peer_address and peer_port are provided
     if (!peer_address.empty() && peer_port > 0)
     {
@@ -188,14 +186,22 @@ int main(int argc, char *argv[])
         peer_addr.sin_port = htons(peer_port);
         peer_addr.sin_addr.s_addr = inet_addr(peer_address.c_str());
 
-        // Example: Send a test message to the peer
-        // string message = "Hello, peer!";
-        // if (sendto(server_socket, message.c_str(), message.size(), 0,
-        //            (struct sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) {
-        //     cerr << "Error sending message to peer: " << strerror(errno) << endl;
-        //     return 1;
-        // }
+        message_t hello_message = {HELLO, {.nodata = {}}};
+
+        if (sendto(server_socket, &hello_message, sizeof(hello_message), 0,
+                   (struct sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) {
+            cerr << "Error sending message to peer: " << strerror(errno) << endl;
+            return 1;
+        }
 
         // cout << "Message sent to peer at " << peer_address << ":" << peer_port << endl;
     }
+    // Wait for hello_reply
+    // connect to all the peers
+    /*
+        while(true){
+            czytaj z socketu
+            responduj
+        }
+    */
 }
