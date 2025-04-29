@@ -198,6 +198,15 @@ message_t new_message(int message_type)
     message.synchronized = 255;
     return message;
 }
+relation_data new_relation_data()
+{
+    relation_data data;
+    data.expected_request = false;
+    data.expected_response = false;
+    data.expected_hello_reply = false;
+    data.expected_ack_connect = false;
+    return data;
+}
 int serialize(message_t message, char *buf)
 {
     int size = 1;
@@ -358,7 +367,7 @@ void handle_hello(const sockaddr_in &sender_addr, map<peer, relation_data> &rela
     {
         err_msg("Error sending hello reply");
     }
-    relations[sender] = relation_data{};
+    relations[sender] = new_relation_data();
 }
 
 void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr, map<peer, relation_data> &relations, string bind_address, int my_port, int socket, char *buf)
@@ -379,7 +388,7 @@ void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr
     {
         peer new_peer = message.peers[i];
         new_peer.port = ntohs(new_peer.port);
-        relations[new_peer] = relation_data{};
+        relations[new_peer] = new_relation_data();
         relations[new_peer].expected_ack_connect = true;
         message_t connect_message = new_message(CONNECT);
         if (send_message(connect_message, socket, new_peer.peer_address, new_peer.port, buf) < 0)
@@ -387,7 +396,7 @@ void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr
             err_msg("Error sending connect message");
         }
     }
-    relations[sender] = relation_data{};
+    relations[sender] = new_relation_data();
 }
 
 void handle_connect(const sockaddr_in &sender_addr, map<peer, relation_data> &relations, int socket, char *buf)
@@ -398,7 +407,7 @@ void handle_connect(const sockaddr_in &sender_addr, map<peer, relation_data> &re
         err_msg("Sender in list of known vertices");
         return;
     }
-    relations[sender] = relation_data{};
+    relations[sender] = new_relation_data();
     message_t ack_connect = new_message(ACK_CONNECT);
     if (send_message(ack_connect, socket, sender.peer_address, sender.port, buf) < 0)
     {
@@ -414,7 +423,7 @@ void handle_ack_connect(const sockaddr_in &sender_addr, map<peer, relation_data>
         err_msg("Sender in list of known vertices");
         return;
     }
-    relations[sender] = relation_data{};
+    relations[sender] = new_relation_data();
 }
 
 void handle_sync_start(const message_t &message, const sockaddr_in &sender_addr, map<peer, relation_data> &relations, unsigned char &sync_level, string current_parent, bool &currently_syncing, chrono::time_point<chrono::high_resolution_clock> &last_sync_start_from_new, unsigned long long &T1, unsigned long long &T3, int socket, char *buf)
@@ -710,7 +719,6 @@ int main(int argc, char *argv[])
 
     char *buffer = new char[MAX_DATAGRAM_SIZE];
     // Say Hello
-    map<peer, relation_data> relations;
 
     // Initialize socket for peer connection if peer_address and peer_port are provided
     if (!peer_address.empty() && peer_port > 0)
@@ -719,9 +727,6 @@ int main(int argc, char *argv[])
         {
             err_msg("Error sending hello message");
         }
-        peer peer_info = {IP_ADDRESS_LENGTH, peer_address, (unsigned short)peer_port};
-        relations[peer_info] = relation_data{};
-        relations[peer_info].expected_hello_reply = true;
         cout << "Hello message sent to peer at " << peer_address << ":" << peer_port << endl;
     }
     handle_messages(server_socket, buffer, bind_address, port);
