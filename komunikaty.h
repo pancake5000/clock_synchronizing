@@ -26,6 +26,7 @@ struct message_t
 // Message type ids
 enum message_type
 {
+    NO_MSG = 0,
     HELLO = 1,
     HELLO_REPLY = 2,
     CONNECT = 3,

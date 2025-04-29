@@ -315,6 +315,11 @@ int receive_message(message_t &message, sockaddr *sender_address, int socket, ch
     ssize_t bytes_received = recvfrom(socket, buf, MAX_DATAGRAM_SIZE, 0, (struct sockaddr *)sender_address, &addr_len);
     if (bytes_received < 0)
     {
+        if(errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            message = new_message(NO_MSG);
+            return 0; // No data received, non-blocking mode
+        }
         cerr << "Error receiving message: " << strerror(errno) << endl;
         return -1;
     }
@@ -669,6 +674,9 @@ int handle_messages(int socket, char *buf, string bind_address, int my_port)
         case TIME:
             handle_time();
             cout << "Received TIME message" << endl;
+            break;
+        case NO_MSG:
+            usleep(1000); // No message received, sleep for a while
             break;
         default:
             err_msg("Unknown message type: %d", message.message);
