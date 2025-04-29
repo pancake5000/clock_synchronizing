@@ -6,10 +6,10 @@ TARGET1 = serwer
 all: $(TARGET1)
 
 $(TARGET1): $(TARGET1).o
-    $(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^
 
 $(TARGET1).o: $(TARGET1).cpp komunikaty.h
-    $(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-    rm -f $(TARGET1) *.o *~
+	rm -f $(TARGET1) *.o *~
