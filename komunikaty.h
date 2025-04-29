@@ -20,7 +20,7 @@ struct message_t
     unsigned short count;
     vector<peer> peers;
     unsigned long long timestamp;
-    char synchronized;
+    unsigned char synchronized;
 };
 
 // Message type ids

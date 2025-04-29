@@ -8,6 +8,7 @@
 #include <endian.h> // Use endian.h for htonll and ntohll
 #include <set>
 #include <chrono>
+#include <map>
 
 #include "komunikaty.h"
 #include "err.h"
@@ -15,9 +16,21 @@
 #define MAX_DATAGRAM_SIZE 65507 // Maximum size of a UDP datagram
 #define IP_ADDRESS_LENGTH 4
 #define PEER_DESCRIPTION_SIZE 7 // 1 byte for length + 4 bytes for IP + 2 bytes for port
+
 using namespace std;
 
+struct relation_data
+{
+    chrono::time_point<chrono::high_resolution_clock> last_sync_start_time;
+    chrono::time_point<chrono::high_resolution_clock> last_delay_request_time;
+    bool expected_request;
+    bool expected_response;
+    bool expected_hello_reply;
+    bool expected_ack_connect;
+};
+
 chrono::time_point<chrono::high_resolution_clock> time0;
+unsigned long long offset;
 int read_from_argv(int argc, char *argv[], string &bind_address, int &port, string &peer_address, int &peer_port)
 {
     int opt;
@@ -164,13 +177,18 @@ int initialize_socket(int &server_socket, sockaddr_in &server_addr, string bind_
     return 0;
 }
 
-unsigned long long time()
+unsigned long long time_natural()
 {
     auto now = chrono::high_resolution_clock::now();
     auto duration = chrono::duration_cast<chrono::milliseconds>(now - time0);
     return duration.count();
 }
-
+unsigned long long time_offset()
+{
+    auto now = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(now - time0);
+    return (unsigned long long)duration.count() - offset;
+}
 message_t new_message(int message_type)
 {
     message_t message;
@@ -317,81 +335,38 @@ int say_hello(int socket, string receiver_address, int receiver_port, char *buf)
     return 0;
 }
 
-// int handle_next_message(int socket, char *buf)
-// {
-//     sockaddr_in sender_addr{};
-//     message_t message;
-//     if(receive_message(message, (struct sockaddr *)&sender_addr, socket, buf)<0){
-//         return -1;
-//     }
-//     cout << "Received message from " << inet_ntoa(sender_addr.sin_addr) << ":" << ntohs(sender_addr.sin_port) << endl;
-//     cout << "Message type: " << (int)message.message << endl;
-//     switch (message.message)
-//         {
-//         case HELLO:
-//             cout << "Received HELLO message" << endl;
-//             send_hello_reply()
-//             break;
-//         case HELLO_REPLY:
-//             cout << "Received HELLO_REPLY message" << endl;
-//             break;
-//         case CONNECT:
-//             cout << "Received CONNECT message" << endl;
-//             break;
-//         case ACK_CONNECT:
-//             cout << "Received ACK_CONNECT message" << endl;
-//             break;
-//         case SYNC_START:
-//             cout << "Received SYNC_START message" << endl;
-//             break;
-//         case DELAY_REQUEST:
-//             cout << "Received DELAY_REQUEST message" << endl;
-//             break;
-//         case DELAY_RESPONSE:
-//             cout << "Received DELAY_RESPONSE message" << endl;
-//             break;
-//         case LEADER:
-//             cout << "Received LEADER message" << endl;
-//             break;
-//         case GET_TIME:
-//             cout << "Received GET_TIME message" << endl;
-//             break;
-//         case TIME:
-//             cout << "Received TIME message" << endl;
-//             break;
-//         default:
-//             err_msg("Unknown message type: %d", message.message);
-//             break;
-//         }
-//     return 0;
-// }
-void handle_hello(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices, int socket, char *buf)
+void handle_hello(const sockaddr_in &sender_addr, map<peer, relation_data> &relations, int socket, char *buf)
 {
     peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
-    if (known_vertices.find(sender) != known_vertices.end())
+    if (relations.find(sender) != relations.end())
     {
-        known_vertices.erase(sender);
+        relations.erase(sender);
     }
     message_t hello_reply = new_message(HELLO_REPLY);
-    hello_reply.count = known_vertices.size();
-    hello_reply.peers = vector<peer>(known_vertices.begin(), known_vertices.end());
+    hello_reply.count = relations.size();
+    hello_reply.peers = vector<peer>();
+    for (const auto &relation : relations)
+    {
+        hello_reply.peers.push_back(relation.first);
+    }
     if (send_message(hello_reply, socket, sender.peer_address, sender.port, buf) < 0)
     {
         err_msg("Error sending hello reply");
     }
-    known_vertices.insert(sender);
+    relations[sender] = relation_data{};
 }
 
-void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices, string bind_address, int my_port, int socket, char *buf)
+void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr, map<peer, relation_data> &relations, string bind_address, int my_port, int socket, char *buf)
 {
     peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
-    if (known_vertices.find(sender) != known_vertices.end())
+    if (relations.find(sender) != relations.end())
     {
         err_msg("Sender in list of known vertices");
         return;
     }
-    peer me = {IP_ADDRESS_LENGTH, bind_address, my_port};
-    if(known_vertices.find(me)!=known_vertices.end()){
+    peer me = {IP_ADDRESS_LENGTH, bind_address, (unsigned short)my_port};
+    if (relations.find(me) != relations.end())
+    {
         err_msg("I am in list of known vertices");
         return;
     }
@@ -399,25 +374,26 @@ void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr
     {
         peer new_peer = message.peers[i];
         new_peer.port = ntohs(new_peer.port);
-        known_vertices.insert(new_peer);
+        relations[new_peer] = relation_data{};
+        relations[new_peer].expected_ack_connect = true;
         message_t connect_message = new_message(CONNECT);
-        if(send_message(connect_message, socket, new_peer.peer_address, new_peer.port, buf) < 0)
+        if (send_message(connect_message, socket, new_peer.peer_address, new_peer.port, buf) < 0)
         {
             err_msg("Error sending connect message");
         }
     }
-    known_vertices.insert(sender);
+    relations[sender] = relation_data{};
 }
 
-void handle_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices, int socket, char *buf) 
+void handle_connect(const sockaddr_in &sender_addr, map<peer, relation_data> &relations, int socket, char *buf)
 {
     peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
-    if (known_vertices.find(sender) != known_vertices.end())
+    if (relations.find(sender) != relations.end())
     {
         err_msg("Sender in list of known vertices");
         return;
     }
-    known_vertices.insert(sender);
+    relations[sender] = relation_data{};
     message_t ack_connect = new_message(ACK_CONNECT);
     if (send_message(ack_connect, socket, sender.peer_address, sender.port, buf) < 0)
     {
@@ -425,53 +401,224 @@ void handle_connect(const message_t &message, const sockaddr_in &sender_addr, se
     }
 }
 
-void handle_ack_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices)
+void handle_ack_connect(const sockaddr_in &sender_addr, map<peer, relation_data> &relations)
 {
     peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
-    if(known_vertices.find(sender) != known_vertices.end())
+    if (relations.find(sender) != relations.end())
     {
         err_msg("Sender in list of known vertices");
         return;
     }
-    known_vertices.insert(sender);
+    relations[sender] = relation_data{};
 }
 
-void handle_sync_start(const message_t &message, const sockaddr_in &sender_addr)
+void handle_sync_start(const message_t &message, const sockaddr_in &sender_addr, map<peer, relation_data> &relations, unsigned char &sync_level, string current_parent, bool &currently_syncing, chrono::time_point<chrono::high_resolution_clock> &last_sync_start_from_new, unsigned long long &T1, unsigned long long &T3, int socket, char *buf)
 {
-    // TODO: Implement handle_sync_start logic
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    if (sync_level == 0)
+    {
+        err_msg("Node is a leader");
+        return;
+    }
+    if (relations.find(sender) == relations.end())
+    {
+        err_msg("Unknown sender");
+        return;
+    }
+    if (message.synchronized == 255)
+    {
+        err_msg("Sender not synchronized with leader");
+        return;
+    }
+    if (sender.peer_address == current_parent && message.synchronized >= sync_level)
+    {
+        err_msg("Parent no longer synchronized");
+        current_parent = "";
+        sync_level = 255;
+        return;
+    }
+    if (message.synchronized + 1 >= sync_level && sender.peer_address != current_parent)
+    {
+        err_msg("Sender not better than current sync level");
+        return;
+    }
+    if (currently_syncing)
+    {
+        err_msg("Already syncing with another peer");
+        return;
+    }
+    if (current_parent != sender.peer_address)
+    {
+        currently_syncing = true;
+        last_sync_start_from_new = chrono::high_resolution_clock::now();
+    }
+    T1 = message.timestamp;
+    relations[sender].expected_response = true;
+
+    message_t delay_request = new_message(DELAY_REQUEST);
+    relations[sender].last_delay_request_time = chrono::high_resolution_clock::now();
+
+    T3 = time_natural();
+    if (send_message(delay_request, socket, sender.peer_address, sender.port, buf) < 0)
+    {
+        err_msg("Error sending DELAY_REQUEST message");
+    }
 }
 
-void handle_delay_request(const message_t &message, const sockaddr_in &sender_addr)
+void handle_delay_request(const sockaddr_in &sender_addr, map<peer, relation_data> &relations, int socket, char *buf)
 {
-    // TODO: Implement handle_delay_request logic
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    if (relations.find(sender) == relations.end())
+    {
+        err_msg("Unknown sender");
+        return;
+    }
+    if (relations[sender].expected_request == false)
+    {
+        err_msg("Request not expected");
+        return;
+    }
+    if (chrono::high_resolution_clock::now() - relations[sender].last_sync_start_time > chrono::seconds(10))
+    {
+        err_msg("Delay request timeout");
+        return;
+    }
+
+    message_t delay_response = new_message(DELAY_RESPONSE);
+    delay_response.timestamp = time_offset();
+    if (send_message(delay_response, socket, sender.peer_address, sender.port, buf) < 0)
+    {
+        err_msg("Error sending DELAY_RESPONSE message");
+    }
 }
 
-void handle_delay_response(const message_t &message, const sockaddr_in &sender_addr)
+void handle_delay_response(const message_t &message, const sockaddr_in &sender_addr, map<peer, relation_data> &relations, unsigned char &sync_level, string &current_parent, unsigned long long T1, unsigned long long T2, unsigned long long T3)
 {
-    // TODO: Implement handle_delay_response logic
+    if (message.synchronized > sync_level)
+    {
+        err_msg("Sender worse than current sync level");
+        return;
+    }
+    {
+        err_msg("Sender not synchronized with leader");
+        return;
+    }
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    if (relations.find(sender) == relations.end())
+    {
+        err_msg("Unknown sender");
+        return;
+    }
+    if (relations[sender].expected_response == false)
+    {
+        err_msg("Response not requested");
+        return;
+    }
+    if (chrono::high_resolution_clock::now() - relations[sender].last_delay_request_time > chrono::seconds(10))
+    {
+        err_msg("Delay response timeout");
+        return;
+    }
+    unsigned long long T4 = message.timestamp;
+    offset = (T2 - T1 + T3 - T4) / 2;
+    sync_level = message.synchronized + 1;
+    relations[sender].expected_response = false;
+    current_parent = sender.peer_address;
 }
 
-void handle_leader(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices)
+void handle_leader(const message_t &message, unsigned char &sync_level)
 {
-    // TODO: Implement handle_leader logic
+    if (message.synchronized == 0)
+    {
+        if (sync_level == 0)
+        {
+            err_msg("Node is already a leader");
+        }
+    }
+    if (message.synchronized == 255)
+    {
+        if (sync_level != 0)
+        {
+            err_msg("Node is not a leader");
+        }
+        else
+        {
+            sync_level = 255;
+        }
+    }
 }
 
-void handle_get_time(const message_t &message, const sockaddr_in &sender_addr)
+void handle_get_time(const sockaddr_in &sender_addr, unsigned char sync_level, int socket, char *buf)
 {
-    // TODO: Implement handle_get_time logic
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    message_t time_message = new_message(TIME);
+    time_message.synchronized = sync_level;
+    if (sync_level == 255 || sync_level == 0)
+    {
+        time_message.timestamp = time_natural();
+    }
+    else
+    {
+        time_message.timestamp = time_offset();
+    }
+    if (send_message(time_message, socket, sender.peer_address, sender.port, buf) < 0)
+    {
+        err_msg("Error sending TIME message");
+    }
 }
 
-void handle_time(const message_t &message, const sockaddr_in &sender_addr)
+void handle_time()
 {
-    // TODO: Implement handle_time logic
+    err_msg("Received TIME message");
+}
+void send_sync_starts(map<peer, relation_data> &relations, char sync_level, int socket, char *buf)
+{
+    for (auto &relation : relations)
+    {
+        peer sender = relation.first;
+        relation.second.last_sync_start_time = chrono::high_resolution_clock::now();
+        relation.second.expected_request = true;
+        message_t sync_start = new_message(SYNC_START);
+        sync_start.synchronized = sync_level;
+        sync_start.timestamp = time_offset();
+        if (send_message(sync_start, socket, sender.peer_address, sender.port, buf) < 0)
+        {
+            err_msg("Error sending SYNC_START message");
+        }
+    }
 }
 int handle_messages(int socket, char *buf, string bind_address, int my_port)
 {
+    map<peer, relation_data> relations;
+    unsigned char sync_level = 255;
+    string current_parent = "";
+    unsigned long long T1, T2, T3;
 
-    set<peer> known_vertices;
-    vector<pair<sockaddr_in, message_t>> to_send;
+    bool currently_syncing = false;
+    string syncing_with = "";
+
+    chrono::time_point<chrono::high_resolution_clock> last_sync_broadcast_time = chrono::high_resolution_clock::now();
+    chrono::time_point<chrono::high_resolution_clock> last_sync_from_parent = chrono::high_resolution_clock::now();
+    chrono::time_point<chrono::high_resolution_clock> last_sync_start_from_new = chrono::high_resolution_clock::now();
+    send_sync_starts(relations, sync_level, socket, buf);
+
     while (true)
     {
+
+        if (chrono::high_resolution_clock::now() - last_sync_start_from_new > chrono::seconds(10))
+        {
+            currently_syncing = false;
+        }
+        if (sync_level < 255 && chrono::high_resolution_clock::now() - last_sync_from_parent > chrono::seconds(28))
+        {
+            sync_level = 255;
+            current_parent = "";
+        }
+        if (chrono::high_resolution_clock::now() - last_sync_broadcast_time > chrono::seconds(6))
+        {
+            last_sync_broadcast_time = chrono::high_resolution_clock::now();
+            send_sync_starts(relations, sync_level, socket, buf);
+        }
         sockaddr_in sender_addr{};
         message_t message;
         if (receive_message(message, (struct sockaddr *)&sender_addr, socket, buf) < 0)
@@ -484,42 +631,43 @@ int handle_messages(int socket, char *buf, string bind_address, int my_port)
         {
         case HELLO:
             cout << "Received HELLO message" << endl;
-            handle_hello(message, sender_addr, known_vertices, socket, buf);
+            handle_hello(sender_addr, relations, socket, buf);
             break;
         case HELLO_REPLY:
             cout << "Received HELLO_REPLY message" << endl;
-            handle_hello_reply(message, sender_addr, known_vertices, bind_address, my_port, socket, buf);
+            handle_hello_reply(message, sender_addr, relations, bind_address, my_port, socket, buf);
             break;
         case CONNECT:
             cout << "Received CONNECT message" << endl;
-            handle_connect(message, sender_addr, known_vertices, socket, buf);
+            handle_connect(sender_addr, relations, socket, buf);
             break;
         case ACK_CONNECT:
             cout << "Received ACK_CONNECT message" << endl;
-            handle_ack_connect(message, sender_addr, known_vertices);
+            handle_ack_connect(sender_addr, relations);
             break;
         case SYNC_START:
             cout << "Received SYNC_START message" << endl;
-            handle_sync_start(message, sender_addr);
+            T2 = time_natural();
+            handle_sync_start(message, sender_addr, relations, sync_level, current_parent, currently_syncing,last_sync_start_from_new, T1, T3, socket, buf);
             break;
         case DELAY_REQUEST:
+            handle_delay_request(sender_addr, relations, socket, buf);
             cout << "Received DELAY_REQUEST message" << endl;
-            handle_delay_request(message, sender_addr);
             break;
         case DELAY_RESPONSE:
             cout << "Received DELAY_RESPONSE message" << endl;
-            handle_delay_response(message, sender_addr);
+            handle_delay_response(message, sender_addr, relations, sync_level, current_parent, T1, T2, T3);
             break;
         case LEADER:
             cout << "Received LEADER message" << endl;
-            handle_leader(message, sender_addr, known_vertices);
+            handle_leader(message, sync_level);
             break;
         case GET_TIME:
             cout << "Received GET_TIME message" << endl;
-            handle_get_time(message, sender_addr);
+            handle_get_time(sender_addr, sync_level, socket, buf);
             break;
         case TIME:
-            handle_time(message, sender_addr);
+            handle_time();
             cout << "Received TIME message" << endl;
             break;
         default:
@@ -535,9 +683,9 @@ int main(int argc, char *argv[])
     time0 = chrono::high_resolution_clock::now();
 
     string bind_address = "0.0.0.0"; // Default: listen on all addresses
-    int port = 0;             // Default: any available port
-    string peer_address = ""; // Default: no peer address
-    int peer_port = 0;        // Default: no peer port
+    int port = 0;                    // Default: any available port
+    string peer_address = "";        // Default: no peer address
+    int peer_port = 0;               // Default: no peer port
 
     // Parsing command line arguments
     if (read_from_argv(argc, argv, bind_address, port, peer_address, peer_port) != 0)
@@ -554,6 +702,7 @@ int main(int argc, char *argv[])
 
     char *buffer = new char[MAX_DATAGRAM_SIZE];
     // Say Hello
+    map<peer, relation_data> relations;
 
     // Initialize socket for peer connection if peer_address and peer_port are provided
     if (!peer_address.empty() && peer_port > 0)
@@ -562,6 +711,9 @@ int main(int argc, char *argv[])
         {
             err_msg("Error sending hello message");
         }
+        peer peer_info = {IP_ADDRESS_LENGTH, peer_address, (unsigned short)peer_port};
+        relations[peer_info] = relation_data{};
+        relations[peer_info].expected_hello_reply = true;
         cout << "Hello message sent to peer at " << peer_address << ":" << peer_port << endl;
     }
     handle_messages(server_socket, buffer, bind_address, port);
