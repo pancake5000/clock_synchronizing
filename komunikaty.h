@@ -3,25 +3,28 @@
 #include <string>
 
 using namespace std;
-typedef struct
+struct peer
 {
     char peer_address_length;
     string peer_address;
     unsigned short port;
-} peer;
+    bool operator<(const peer &other) const {
+        return peer_address < other.peer_address;
+    }
+};
 
 // structure of message sent and received over network
-typedef struct
+struct message_t
 {
     char message;
     unsigned short count;
     vector<peer> peers;
     unsigned long long timestamp;
     char synchronized;
-} message_t;
+};
 
 // Message type ids
-typedef enum
+enum message_type
 {
     HELLO = 1,
     HELLO_REPLY = 2,
@@ -33,4 +36,4 @@ typedef enum
     LEADER = 21,
     GET_TIME = 31,
     TIME = 32
-} message_type;
+};
