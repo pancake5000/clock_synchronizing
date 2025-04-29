@@ -273,7 +273,7 @@ int deserialize(message_t &message, char *buf, int size)
         pos += sizeof(char);                                             // Update position
     }
     }
-    return size;
+    return 0;
 }
 
 int send_message(message_t message, int socket, string receiver_address, int receiver_port, char *buf)
@@ -291,7 +291,7 @@ int send_message(message_t message, int socket, string receiver_address, int rec
     }
     return 0;
 }
-int receive_message(message_t &message, sockaddr* sender_address, int socket, char *buf)
+int receive_message(message_t &message, sockaddr *sender_address, int socket, char *buf)
 {
     socklen_t addr_len = sizeof(sender_address);
     ssize_t bytes_received = recvfrom(socket, buf, MAX_DATAGRAM_SIZE, 0, (struct sockaddr *)sender_address, &addr_len);
@@ -300,13 +300,18 @@ int receive_message(message_t &message, sockaddr* sender_address, int socket, ch
         cerr << "Error receiving message: " << strerror(errno) << endl;
         return -1;
     }
-    return deserialize(message, buf, bytes_received);
+    if (deserialize(message, buf, bytes_received) < 0)
+    {
+        return -1;
+    }
+    return 0;
 }
 
 int say_hello(int socket, string receiver_address, int receiver_port, char *buf)
 {
     message_t message = new_message(HELLO);
-    if(send_message(message, socket, receiver_address, receiver_port, buf)<0){
+    if (send_message(message, socket, receiver_address, receiver_port, buf) < 0)
+    {
         return -1;
     }
     return 0;
@@ -360,71 +365,134 @@ int say_hello(int socket, string receiver_address, int receiver_port, char *buf)
 //         }
 //     return 0;
 // }
-void handle_hello(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
-    // TODO: Implement handle_hello logic
+void handle_hello(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices, int socket, char *buf)
+{
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    if (known_vertices.find(sender) != known_vertices.end())
+    {
+        known_vertices.erase(sender);
+    }
+    message_t hello_reply = new_message(HELLO_REPLY);
+    hello_reply.count = known_vertices.size();
+    hello_reply.peers = vector<peer>(known_vertices.begin(), known_vertices.end());
+    if (send_message(hello_reply, socket, sender.peer_address, sender.port, buf) < 0)
+    {
+        err_msg("Error sending hello reply");
+    }
+    known_vertices.insert(sender);
 }
 
-void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
-    // TODO: Implement handle_hello_reply logic
+void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices, string bind_address, int my_port, int socket, char *buf)
+{
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    if (known_vertices.find(sender) != known_vertices.end())
+    {
+        err_msg("Sender in list of known vertices");
+        return;
+    }
+    peer me = {IP_ADDRESS_LENGTH, bind_address, my_port};
+    if(known_vertices.find(me)!=known_vertices.end()){
+        err_msg("I am in list of known vertices");
+        return;
+    }
+    for (int i = 0; i < message.count; i++)
+    {
+        peer new_peer = message.peers[i];
+        new_peer.port = ntohs(new_peer.port);
+        known_vertices.insert(new_peer);
+        message_t connect_message = new_message(CONNECT);
+        if(send_message(connect_message, socket, new_peer.peer_address, new_peer.port, buf) < 0)
+        {
+            err_msg("Error sending connect message");
+        }
+    }
+    known_vertices.insert(sender);
 }
 
-void handle_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
-    // TODO: Implement handle_connect logic
+void handle_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices, int socket, char *buf) 
+{
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    if (known_vertices.find(sender) != known_vertices.end())
+    {
+        err_msg("Sender in list of known vertices");
+        return;
+    }
+    known_vertices.insert(sender);
+    message_t ack_connect = new_message(ACK_CONNECT);
+    if (send_message(ack_connect, socket, sender.peer_address, sender.port, buf) < 0)
+    {
+        err_msg("Error sending ACK_CONNECT message");
+    }
 }
 
-void handle_ack_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
-    // TODO: Implement handle_ack_connect logic
+void handle_ack_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices)
+{
+    peer sender = {IP_ADDRESS_LENGTH, inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port)};
+    if(known_vertices.find(sender) != known_vertices.end())
+    {
+        err_msg("Sender in list of known vertices");
+        return;
+    }
+    known_vertices.insert(sender);
 }
 
-void handle_sync_start(const message_t &message, const sockaddr_in &sender_addr) {
+void handle_sync_start(const message_t &message, const sockaddr_in &sender_addr)
+{
     // TODO: Implement handle_sync_start logic
 }
 
-void handle_delay_request(const message_t &message, const sockaddr_in &sender_addr) {
+void handle_delay_request(const message_t &message, const sockaddr_in &sender_addr)
+{
     // TODO: Implement handle_delay_request logic
 }
 
-void handle_delay_response(const message_t &message, const sockaddr_in &sender_addr) {
+void handle_delay_response(const message_t &message, const sockaddr_in &sender_addr)
+{
     // TODO: Implement handle_delay_response logic
 }
 
-void handle_leader(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
+void handle_leader(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices)
+{
     // TODO: Implement handle_leader logic
 }
 
-void handle_get_time(const message_t &message, const sockaddr_in &sender_addr) {
+void handle_get_time(const message_t &message, const sockaddr_in &sender_addr)
+{
     // TODO: Implement handle_get_time logic
 }
 
-void handle_time(const message_t &message, const sockaddr_in &sender_addr) {
+void handle_time(const message_t &message, const sockaddr_in &sender_addr)
+{
     // TODO: Implement handle_time logic
 }
-int handle_messages(int socket, char *buf)
+int handle_messages(int socket, char *buf, string bind_address, int my_port)
 {
 
     set<peer> known_vertices;
+    vector<pair<sockaddr_in, message_t>> to_send;
     while (true)
     {
         sockaddr_in sender_addr{};
-    message_t message;
-    if(receive_message(message, (struct sockaddr *)&sender_addr, socket, buf)<0){
-        return -1;
-    }
-    cout << "Received message from " << inet_ntoa(sender_addr.sin_addr) << ":" << ntohs(sender_addr.sin_port) << endl;
-    cout << "Message type: " << (int)message.message << endl;
-    switch (message.message)
+        message_t message;
+        if (receive_message(message, (struct sockaddr *)&sender_addr, socket, buf) < 0)
+        {
+            return -1;
+        }
+        cout << "Received message from " << inet_ntoa(sender_addr.sin_addr) << ":" << ntohs(sender_addr.sin_port) << endl;
+        cout << "Message type: " << (int)message.message << endl;
+        switch (message.message)
         {
         case HELLO:
             cout << "Received HELLO message" << endl;
-            handle_hello(message, sender_addr, known_vertices);
+            handle_hello(message, sender_addr, known_vertices, socket, buf);
             break;
         case HELLO_REPLY:
             cout << "Received HELLO_REPLY message" << endl;
-            handle_hello_reply(message, sender_addr, known_vertices);
+            handle_hello_reply(message, sender_addr, known_vertices, bind_address, my_port, socket, buf);
             break;
         case CONNECT:
             cout << "Received CONNECT message" << endl;
-            handle_connect(message, sender_addr, known_vertices);
+            handle_connect(message, sender_addr, known_vertices, socket, buf);
             break;
         case ACK_CONNECT:
             cout << "Received ACK_CONNECT message" << endl;
@@ -458,21 +526,18 @@ int handle_messages(int socket, char *buf)
             err_msg("Unknown message type: %d", message.message);
             break;
         }
-    return 0;
     }
     return 0;
 }
-
-
 
 int main(int argc, char *argv[])
 {
     time0 = chrono::high_resolution_clock::now();
 
     string bind_address = "0.0.0.0"; // Default: listen on all addresses
-    int port = 0;                    // Default: any available port
-    string peer_address = "";        // Default: no peer address
-    int peer_port = 0;               // Default: no peer port
+    int port = 0;             // Default: any available port
+    string peer_address = ""; // Default: no peer address
+    int peer_port = 0;        // Default: no peer port
 
     // Parsing command line arguments
     if (read_from_argv(argc, argv, bind_address, port, peer_address, peer_port) != 0)
@@ -486,10 +551,9 @@ int main(int argc, char *argv[])
     {
         return 1;
     }
-    
+
     char *buffer = new char[MAX_DATAGRAM_SIZE];
     // Say Hello
-   
 
     // Initialize socket for peer connection if peer_address and peer_port are provided
     if (!peer_address.empty() && peer_port > 0)
@@ -500,8 +564,8 @@ int main(int argc, char *argv[])
         }
         cout << "Hello message sent to peer at " << peer_address << ":" << peer_port << endl;
     }
-    handle_messages(server_socket, buffer);
-   
+    handle_messages(server_socket, buffer, bind_address, port);
+
     // Wait for hello_reply
     // connect to all the peers
     /*
