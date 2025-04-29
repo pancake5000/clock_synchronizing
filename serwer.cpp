@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <endian.h> // Use endian.h for htonll and ntohll
 #include <set>
+#include <chrono>
 
 #include "komunikaty.h"
 #include "err.h"
@@ -16,6 +17,7 @@
 #define PEER_DESCRIPTION_SIZE 7 // 1 byte for length + 4 bytes for IP + 2 bytes for port
 using namespace std;
 
+chrono::time_point<chrono::high_resolution_clock> time0;
 int read_from_argv(int argc, char *argv[], string &bind_address, int &port, string &peer_address, int &peer_port)
 {
     int opt;
@@ -161,6 +163,14 @@ int initialize_socket(int &server_socket, sockaddr_in &server_addr, string bind_
     cout << "Server socket initialized and bound to " << bind_address << ":" << port << endl;
     return 0;
 }
+
+unsigned long long time()
+{
+    auto now = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(now - time0);
+    return duration.count();
+}
+
 message_t new_message(int message_type)
 {
     message_t message;
@@ -266,13 +276,13 @@ int deserialize(message_t &message, char *buf, int size)
     return size;
 }
 
-int send_message(message_t message, int socket, string peer_address, int peer_port, char *buf)
+int send_message(message_t message, int socket, string receiver_address, int receiver_port, char *buf)
 {
     int size = serialize(message, buf);
     sockaddr_in peer_addr{};
     peer_addr.sin_family = AF_INET;
-    peer_addr.sin_port = htons(peer_port);
-    peer_addr.sin_addr.s_addr = inet_addr(peer_address.c_str());
+    peer_addr.sin_port = htons(receiver_port);
+    peer_addr.sin_addr.s_addr = inet_addr(receiver_address.c_str());
 
     if (sendto(socket, buf, size, 0, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0)
     {
@@ -281,11 +291,10 @@ int send_message(message_t message, int socket, string peer_address, int peer_po
     }
     return 0;
 }
-int receive_message(message_t &message, int socket, char *buf)
+int receive_message(message_t &message, sockaddr* sender_address, int socket, char *buf)
 {
-    sockaddr_in peer_addr{};
-    socklen_t addr_len = sizeof(peer_addr);
-    ssize_t bytes_received = recvfrom(socket, buf, MAX_DATAGRAM_SIZE, 0, (struct sockaddr *)&peer_addr, &addr_len);
+    socklen_t addr_len = sizeof(sender_address);
+    ssize_t bytes_received = recvfrom(socket, buf, MAX_DATAGRAM_SIZE, 0, (struct sockaddr *)sender_address, &addr_len);
     if (bytes_received < 0)
     {
         cerr << "Error receiving message: " << strerror(errno) << endl;
@@ -294,16 +303,171 @@ int receive_message(message_t &message, int socket, char *buf)
     return deserialize(message, buf, bytes_received);
 }
 
-int say_hello(int socket, string peer_address, int peer_port, char *buf)
+int say_hello(int socket, string receiver_address, int receiver_port, char *buf)
 {
     message_t message = new_message(HELLO);
-    if(send_message(message, socket, peer_address, peer_port, buf)<0){
+    if(send_message(message, socket, receiver_address, receiver_port, buf)<0){
         return -1;
     }
     return 0;
 }
+
+// int handle_next_message(int socket, char *buf)
+// {
+//     sockaddr_in sender_addr{};
+//     message_t message;
+//     if(receive_message(message, (struct sockaddr *)&sender_addr, socket, buf)<0){
+//         return -1;
+//     }
+//     cout << "Received message from " << inet_ntoa(sender_addr.sin_addr) << ":" << ntohs(sender_addr.sin_port) << endl;
+//     cout << "Message type: " << (int)message.message << endl;
+//     switch (message.message)
+//         {
+//         case HELLO:
+//             cout << "Received HELLO message" << endl;
+//             send_hello_reply()
+//             break;
+//         case HELLO_REPLY:
+//             cout << "Received HELLO_REPLY message" << endl;
+//             break;
+//         case CONNECT:
+//             cout << "Received CONNECT message" << endl;
+//             break;
+//         case ACK_CONNECT:
+//             cout << "Received ACK_CONNECT message" << endl;
+//             break;
+//         case SYNC_START:
+//             cout << "Received SYNC_START message" << endl;
+//             break;
+//         case DELAY_REQUEST:
+//             cout << "Received DELAY_REQUEST message" << endl;
+//             break;
+//         case DELAY_RESPONSE:
+//             cout << "Received DELAY_RESPONSE message" << endl;
+//             break;
+//         case LEADER:
+//             cout << "Received LEADER message" << endl;
+//             break;
+//         case GET_TIME:
+//             cout << "Received GET_TIME message" << endl;
+//             break;
+//         case TIME:
+//             cout << "Received TIME message" << endl;
+//             break;
+//         default:
+//             err_msg("Unknown message type: %d", message.message);
+//             break;
+//         }
+//     return 0;
+// }
+void handle_hello(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
+    // TODO: Implement handle_hello logic
+}
+
+void handle_hello_reply(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
+    // TODO: Implement handle_hello_reply logic
+}
+
+void handle_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
+    // TODO: Implement handle_connect logic
+}
+
+void handle_ack_connect(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
+    // TODO: Implement handle_ack_connect logic
+}
+
+void handle_sync_start(const message_t &message, const sockaddr_in &sender_addr) {
+    // TODO: Implement handle_sync_start logic
+}
+
+void handle_delay_request(const message_t &message, const sockaddr_in &sender_addr) {
+    // TODO: Implement handle_delay_request logic
+}
+
+void handle_delay_response(const message_t &message, const sockaddr_in &sender_addr) {
+    // TODO: Implement handle_delay_response logic
+}
+
+void handle_leader(const message_t &message, const sockaddr_in &sender_addr, set<peer> &known_vertices) {
+    // TODO: Implement handle_leader logic
+}
+
+void handle_get_time(const message_t &message, const sockaddr_in &sender_addr) {
+    // TODO: Implement handle_get_time logic
+}
+
+void handle_time(const message_t &message, const sockaddr_in &sender_addr) {
+    // TODO: Implement handle_time logic
+}
+int handle_messages(int socket, char *buf)
+{
+
+    set<peer> known_vertices;
+    while (true)
+    {
+        sockaddr_in sender_addr{};
+    message_t message;
+    if(receive_message(message, (struct sockaddr *)&sender_addr, socket, buf)<0){
+        return -1;
+    }
+    cout << "Received message from " << inet_ntoa(sender_addr.sin_addr) << ":" << ntohs(sender_addr.sin_port) << endl;
+    cout << "Message type: " << (int)message.message << endl;
+    switch (message.message)
+        {
+        case HELLO:
+            cout << "Received HELLO message" << endl;
+            handle_hello(message, sender_addr, known_vertices);
+            break;
+        case HELLO_REPLY:
+            cout << "Received HELLO_REPLY message" << endl;
+            handle_hello_reply(message, sender_addr, known_vertices);
+            break;
+        case CONNECT:
+            cout << "Received CONNECT message" << endl;
+            handle_connect(message, sender_addr, known_vertices);
+            break;
+        case ACK_CONNECT:
+            cout << "Received ACK_CONNECT message" << endl;
+            handle_ack_connect(message, sender_addr, known_vertices);
+            break;
+        case SYNC_START:
+            cout << "Received SYNC_START message" << endl;
+            handle_sync_start(message, sender_addr);
+            break;
+        case DELAY_REQUEST:
+            cout << "Received DELAY_REQUEST message" << endl;
+            handle_delay_request(message, sender_addr);
+            break;
+        case DELAY_RESPONSE:
+            cout << "Received DELAY_RESPONSE message" << endl;
+            handle_delay_response(message, sender_addr);
+            break;
+        case LEADER:
+            cout << "Received LEADER message" << endl;
+            handle_leader(message, sender_addr, known_vertices);
+            break;
+        case GET_TIME:
+            cout << "Received GET_TIME message" << endl;
+            handle_get_time(message, sender_addr);
+            break;
+        case TIME:
+            handle_time(message, sender_addr);
+            cout << "Received TIME message" << endl;
+            break;
+        default:
+            err_msg("Unknown message type: %d", message.message);
+            break;
+        }
+    return 0;
+    }
+    return 0;
+}
+
+
+
 int main(int argc, char *argv[])
 {
+    time0 = chrono::high_resolution_clock::now();
 
     string bind_address = "0.0.0.0"; // Default: listen on all addresses
     int port = 0;                    // Default: any available port
@@ -322,7 +486,7 @@ int main(int argc, char *argv[])
     {
         return 1;
     }
-    set<peer> known_vertices;
+    
     char *buffer = new char[MAX_DATAGRAM_SIZE];
     // Say Hello
    
@@ -330,13 +494,14 @@ int main(int argc, char *argv[])
     // Initialize socket for peer connection if peer_address and peer_port are provided
     if (!peer_address.empty() && peer_port > 0)
     {
-        known_vertices.insert({0, peer_address, (unsigned short)peer_port});
         if (say_hello(server_socket, peer_address, peer_port, buffer) < 0)
         {
             err_msg("Error sending hello message");
         }
         cout << "Hello message sent to peer at " << peer_address << ":" << peer_port << endl;
     }
+    handle_messages(server_socket, buffer);
+   
     // Wait for hello_reply
     // connect to all the peers
     /*
