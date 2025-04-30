@@ -639,8 +639,11 @@ int handle_messages(int socket, char *buf, string bind_address, int my_port)
         {
             return -1;
         }
-        cout << "Received message from " << inet_ntoa(sender_addr.sin_addr) << ":" << ntohs(sender_addr.sin_port) << endl;
-        cout << "Message type: " << (int)message.message << endl;
+        if(message.message != NO_MSG)
+        {
+            cout << "Received message from " << inet_ntoa(sender_addr.sin_addr) << ":" << ntohs(sender_addr.sin_port) << endl;
+            cout << "Message type: " << (int)message.message << endl;
+        }
         switch (message.message)
         {
         case HELLO:
