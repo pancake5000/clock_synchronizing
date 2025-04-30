@@ -321,7 +321,7 @@ int send_message(message_t message, int socket, string receiver_address, int rec
 int receive_message(message_t &message, sockaddr *sender_address, int socket, char *buf)
 {
     socklen_t addr_len = sizeof(sender_address);
-    ssize_t bytes_received = recvfrom(socket, buf, MAX_DATAGRAM_SIZE, 0, (struct sockaddr *)sender_address, &addr_len);
+    ssize_t bytes_received = recvfrom(socket, buf, MAX_DATAGRAM_SIZE, MSG_DONTWAIT, (struct sockaddr *)sender_address, &addr_len);
     if (bytes_received < 0)
     {
         if(errno == EAGAIN || errno == EWOULDBLOCK)
@@ -623,7 +623,7 @@ int handle_messages(int socket, char *buf, string bind_address, int my_port)
         {
             currently_syncing = false;
         }
-        if (sync_level < 255 && chrono::high_resolution_clock::now() - last_sync_from_parent > chrono::seconds(28))
+        if (sync_level!= 0 && sync_level < 255 && chrono::high_resolution_clock::now() - last_sync_from_parent > chrono::seconds(28))
         {
             sync_level = 255;
             current_parent = "";
