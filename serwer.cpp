@@ -269,6 +269,7 @@ int deserialize(message_t &message, char *buf, int size)
             return -1;
         }
         // Resize vector to hold peers
+        message.peers.resize(message.count);
         for (int i = 0; i < message.count; i++)
         {
             message.peers[i].peer_address_length = buf[pos]; // Read address length
